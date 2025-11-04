@@ -1,4 +1,5 @@
 import Joi from 'joi';
+import mongoose from 'mongoose';
 import { Perk } from '../models/Perk.js';
 
 // validation schema for creating/updating a perk
@@ -69,12 +70,27 @@ export async function getAllPerksPublic(req, res, next) {
       query.merchant = merchant.trim();
     }
     
-    // Fetch perks with the built query, populate creator info, and sort by newest first
+    // Fetch perks without populate first
     const perks = await Perk
       .find(query)
-      .populate('createdBy', 'name email') // Include creator information
       .sort({ createdAt: -1 })
       .lean();
+
+    // Manually populate createdBy for valid ObjectIds only
+    for (const perk of perks) {
+      if (perk.createdBy && mongoose.Types.ObjectId.isValid(perk.createdBy)) {
+        try {
+          const user = await mongoose.model('User').findById(perk.createdBy).select('name email').lean();
+          perk.createdBy = user;
+        } catch (err) {
+          console.warn(`Failed to populate user ${perk.createdBy}:`, err.message);
+          perk.createdBy = null;
+        }
+      } else {
+        // Invalid ObjectId, set to null
+        perk.createdBy = null;
+      }
+    }
 
     res.json({ perks });
   } catch (err) {
